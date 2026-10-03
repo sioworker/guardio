@@ -1,0 +1,12 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v cargo || { curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal -c clippy; echo "$HOME/.cargo/bin" >> $GITHUB_PATH; }
+      - run: cargo clippy -- -D warnings && cargo test
