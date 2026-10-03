@@ -1,4 +1,5 @@
 mod app;
+mod svc;
 mod tray;
 mod ug;
 
@@ -15,8 +16,24 @@ fn desk() -> Option<()> { // TryExec hides it after cargo uninstall
 
 fn main() -> eframe::Result {
 	desk();
-	if std::env::args().nth(1).as_deref() == Some("-d") {
-		return tray::run();
+	match std::env::args().nth(1).as_deref() {
+		Some("-d") => return tray::run(),
+		Some(a) => {
+			let r = match a {
+				"-i" => svc::install(),
+				"-u" => svc::uninstall(),
+				_ => Err("usage: guardio [-d daemon | -i install svc | -u uninstall svc]".into()),
+			};
+			match r {
+				Ok(s) => println!("{s}"),
+				Err(e) => {
+					eprintln!("{e}");
+					std::process::exit(1)
+				}
+			}
+			return Ok(());
+		}
+		None => {}
 	}
 	let o = eframe::NativeOptions { viewport: eframe::egui::ViewportBuilder::default().with_inner_size([820., 480.]).with_app_id("guardio"), ..Default::default() };
 	eframe::run_native("guardio", o, Box::new(|cc| Ok(Box::new(app::App::new(&cc.egui_ctx)))))

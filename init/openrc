@@ -2,5 +2,5 @@
 
 description="guardio tray + new usb device prompts"
 supervisor=supervise-daemon
-command="${HOME}/.cargo/bin/guardio"
+command="@BIN@"
 command_args="-d"

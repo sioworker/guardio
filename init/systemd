@@ -1,0 +1,11 @@
+[Unit]
+Description=guardio tray + new usb device prompts
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=@BIN@ -d
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=guardio daemon
+Exec=@BIN@ -d
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
