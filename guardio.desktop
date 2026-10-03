@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=guardio
+GenericName=USB Guard
+Comment=allow/block usb devices via usbguard
+Exec=@BIN@
+TryExec=@BIN@
+Icon=security-high
+Terminal=false
+Categories=System;Security;
+Keywords=usb;usbguard;device;
+StartupWMClass=guardio
