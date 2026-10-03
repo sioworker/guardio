@@ -154,3 +154,12 @@ pub fn watch(ping: impl Fn() + Send + 'static) -> Receiver<Ev> {
 	});
 	rx
 }
+
+pub fn up(d: bool) -> bool { // other guardio running, d = daemon
+	let me = std::process::id().to_string();
+	std::fs::read_dir("/proc").into_iter().flatten().flatten().filter(|e| e.file_name().to_str() != Some(&me)).any(|e| {
+		let c = std::fs::read(e.path().join("cmdline")).unwrap_or_default();
+		let a: Vec<&[u8]> = c.split(|&b| b == 0).collect();
+		(a[0] == b"guardio" || a[0].ends_with(b"/guardio")) && (a.get(1) == Some(&&b"-d"[..])) == d
+	})
+}

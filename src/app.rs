@@ -201,7 +201,7 @@ impl eframe::App for App {
 		while let Ok(e) = self.rx.try_recv() {
 			match e {
 				Ev::Chg => dirty = true,
-				Ev::New(d) => {
+				Ev::New(d) if !ug::up(true) => { // guardio -d asks instead
 					ui.ctx().send_viewport_cmd(ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
 					self.asks.retain(|a| a.id != d.id);
 					self.asks.push(d);

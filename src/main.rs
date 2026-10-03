@@ -1,4 +1,5 @@
 mod app;
+mod tray;
 mod ug;
 
 fn desk() -> Option<()> { // TryExec hides it after cargo uninstall
@@ -14,6 +15,9 @@ fn desk() -> Option<()> { // TryExec hides it after cargo uninstall
 
 fn main() -> eframe::Result {
 	desk();
+	if std::env::args().nth(1).as_deref() == Some("-d") {
+		return tray::run();
+	}
 	let o = eframe::NativeOptions { viewport: eframe::egui::ViewportBuilder::default().with_inner_size([820., 480.]).with_app_id("guardio"), ..Default::default() };
 	eframe::run_native("guardio", o, Box::new(|cc| Ok(Box::new(app::App::new(&cc.egui_ctx)))))
 }

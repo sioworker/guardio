@@ -1,0 +1,6 @@
+#!/usr/bin/openrc-run
+
+description="guardio tray + new usb device prompts"
+supervisor=supervise-daemon
+command="${HOME}/.cargo/bin/guardio"
+command_args="-d"
