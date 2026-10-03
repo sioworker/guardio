@@ -5,6 +5,7 @@ edition = "2024"
 authors = ["sioworker"]
 
 [dependencies]
+eframe = "0.36.2"
 
 [profile.release]
 strip = true
