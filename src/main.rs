@@ -1,4 +1,5 @@
 mod app;
+mod info;
 mod svc;
 mod tray;
 mod ug;

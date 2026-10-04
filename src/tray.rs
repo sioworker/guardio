@@ -1,3 +1,4 @@
+use crate::info;
 use crate::ug::{self, Dev, Ev};
 use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
@@ -44,7 +45,8 @@ fn bad() -> usize {
 }
 
 fn ask(d: Dev) {
-	let b = format!("{}\n{}  @ {}", if d.name.is_empty() { "unknown device" } else { &d.name }, d.vp, d.port);
+	let k: Vec<&str> = info::kinds(&d).iter().map(|k| k.1).collect();
+	let b = format!("{}\n{}  @ {}  {}\n{}{}", info::title(&d, &info::labels()), d.vp, d.port, info::vendor(&d), k.join(", "), info::sus(&d).map_or(String::new(), |w| format!("\n⚠ {w}")));
 	let Ok(o) = Command::new("notify-send").args(["-a", "guardio", "-i", "security-low", "-u", "critical", "-A", "default=open", "-A", "allow=Allow", "-A", "always=Always", "-A", "reject=Reject", "new usb device", &b]).output() else { return };
 	let r = match String::from_utf8_lossy(&o.stdout).trim() {
 		"allow" => ug::act(d.id, "allow", false),

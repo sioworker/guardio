@@ -1,4 +1,6 @@
+use crate::info;
 use crate::ug::{self, Dev, Ev};
+use std::collections::HashMap;
 use eframe::egui::{self, Color32, RichText, ViewportCommand};
 use std::sync::mpsc::Receiver;
 
@@ -7,6 +9,7 @@ const HINT: &str = "no IPC perms, run: doas usbguard add-user $USER -d modify,li
 enum Act {
 	Dev(u32, &'static str, bool),
 	Revoke(u32, Option<u32>),
+	Label(String, String),
 }
 
 pub struct App {
@@ -17,6 +20,8 @@ pub struct App {
 	rx: Receiver<Ev>,
 	tab: u8,
 	hubs: bool,
+	lbl: HashMap<String, String>,
+	ren: Option<(String, String)>, // key, buf
 	add: String,
 	msg: String,
 }
@@ -24,7 +29,7 @@ pub struct App {
 impl App {
 	pub fn new(ctx: &egui::Context) -> Self {
 		let c = ctx.clone();
-		let mut a = App { devs: vec![], rules: vec![], pol: Default::default(), asks: vec![], rx: ug::watch(move || c.request_repaint()), tab: 0, hubs: false, add: String::new(), msg: String::new() };
+		let mut a = App { devs: vec![], rules: vec![], pol: Default::default(), asks: vec![], rx: ug::watch(move || c.request_repaint()), tab: 0, hubs: false, lbl: HashMap::new(), ren: None, add: String::new(), msg: String::new() };
 		a.load();
 		a
 	}
@@ -36,6 +41,7 @@ impl App {
 			Err(e) => self.msg = if e.contains("not permitted") { HINT.into() } else { e },
 		}
 		self.rules = ug::rules().unwrap_or_default();
+		self.lbl = info::labels();
 		self.pol = ["ImplicitPolicyTarget", "InsertedDevicePolicy"].map(ug::param);
 		let d = &self.devs;
 		self.asks.retain(|a| d.iter().any(|x| x.id == a.id && x.tgt == "block"));
@@ -48,20 +54,8 @@ impl App {
 		}
 	}
 
-	fn always(&self, d: &Dev) -> bool {
-		self.rules.iter().any(|r| r.tgt == "allow" && r.hits(d))
-	}
-
-	fn lists(&self) -> [Vec<(&Dev, Option<&Dev>)>; 3] {
-		// (shown, live dev)
-		let h = |d: &&Dev| self.hubs || !d.hub();
-		let a = self.rules.iter().filter(|r| r.tgt == "allow").filter(h).map(|r| (r, self.devs.iter().find(|d| r.hits(d)))).collect();
-		let b = self.devs.iter().filter(|d| d.tgt == "allow" && !self.always(d)).filter(h).map(|d| (d, Some(d))).collect();
-		let c = self.devs.iter().filter(|d| d.tgt != "allow").filter(h).map(|d| (d, Some(d))).collect();
-		[a, b, c]
-	}
-
-	fn cards(&self, ui: &mut egui::Ui, l: &[(&Dev, Option<&Dev>)]) -> Option<Act> {
+	fn cards(&mut self, ui: &mut egui::Ui) -> Option<Act> {
+		let l = &lists(&self.devs, &self.rules, self.hubs)[self.tab as usize];
 		let mut act = None;
 		if l.is_empty() {
 			ui.add_space(30.);
@@ -80,9 +74,31 @@ impl App {
 							ui.horizontal(|ui| {
 								let (r, _) = ui.allocate_exact_size(egui::vec2(10., 10.), egui::Sense::hover());
 								ui.painter().circle_filled(r.center(), 4.5, c);
-								ui.add(egui::Label::new(RichText::new(if d.name.is_empty() { "unknown device" } else { &d.name }).strong().size(15.)).truncate()).on_hover_text(&d.raw);
+								let k = info::key(d);
+								match &mut self.ren {
+									Some((rk, b)) if *rk == k => {
+										let r = ui.add(egui::TextEdit::singleline(b).id(egui::Id::new(("ren", &k))).desired_width(w - 20.).hint_text("name, empty = reset"));
+										if r.lost_focus() {
+											act = Some(if ui.input(|i| i.key_pressed(egui::Key::Escape)) { Act::Label(String::new(), String::new()) } else { Act::Label(k, b.clone()) }); // empty key = cancel
+										}
+									}
+									_ => {
+										let t = info::title(d, &self.lbl);
+										if ui.add(egui::Label::new(RichText::new(&t).strong().size(15.)).truncate().sense(egui::Sense::click())).on_hover_text(format!("{}\ndouble-click to rename\n\n{}", d.name, d.raw)).double_clicked() {
+											ui.memory_mut(|m| m.request_focus(egui::Id::new(("ren", &k))));
+											self.ren = Some((k, self.lbl.get(&info::key(d)).cloned().unwrap_or(t)));
+										}
+									}
+								}
 							});
-							ui.label(RichText::new(format!("{}  {}", d.vp, live.map_or("not plugged in", |x| &x.port))).monospace().weak().small());
+							let ks = info::kinds(d);
+							if !ks.is_empty() {
+								ui.label(RichText::new(ks.iter().map(|(e, n)| format!("{e} {n}")).collect::<Vec<_>>().join("   ")).small());
+							}
+							ui.label(RichText::new(format!("{}  {}  {}", d.vp, live.map_or("not plugged in", |x| &x.port), info::vendor(d))).monospace().weak().small());
+							if let Some(w) = info::sus(d) {
+								ui.label(RichText::new(format!("⚠ {w}")).color(col("reject")).small().strong());
+							}
 							ui.add_space(6.);
 							ui.horizontal(|ui| match (self.tab, live) {
 								(0, x) => {
@@ -164,9 +180,12 @@ impl App {
 		let mut done = vec![];
 		for d in &self.asks {
 			egui::Window::new("new usb device").id(egui::Id::new(("ask", d.id))).collapsible(false).resizable(false).show(ctx, |ui| {
-				ui.heading(if d.name.is_empty() { "unknown device" } else { &d.name });
-				ui.monospace(format!("{}  @ {}", d.vp, d.port));
-				ui.label(format!("ifs: {}", d.ifs));
+				ui.heading(info::title(d, &self.lbl));
+				ui.monospace(format!("{}  @ {}  {}", d.vp, d.port, info::vendor(d)));
+				ui.label(info::kinds(d).iter().map(|(e, n)| format!("{e} {n}")).collect::<Vec<_>>().join("   "));
+				if let Some(w) = info::sus(d) {
+					ui.label(RichText::new(format!("⚠ {w}")).color(col("reject")).strong());
+				}
 				ui.horizontal(|ui| {
 					for (l, t, p) in [("allow", "allow", false), ("always", "allow", true), ("reject", "reject", false), ("ignore", "", false)] {
 						if ui.button(l).clicked() {
@@ -184,6 +203,15 @@ impl App {
 			}
 		}
 	}
+}
+
+fn lists<'a>(devs: &'a [Dev], rules: &'a [Dev], hubs: bool) -> [Vec<(&'a Dev, Option<&'a Dev>)>; 3] { // (shown, live dev)
+	let h = |d: &&Dev| hubs || !d.hub();
+	let always = |d: &Dev| rules.iter().any(|r| r.tgt == "allow" && r.hits(d));
+	let a = rules.iter().filter(|r| r.tgt == "allow").filter(h).map(|r| (r, devs.iter().find(|d| r.hits(d)))).collect();
+	let b = devs.iter().filter(|d| d.tgt == "allow" && !always(d)).filter(h).map(|d| (d, Some(d))).collect();
+	let c = devs.iter().filter(|d| d.tgt != "allow").filter(h).map(|d| (d, Some(d))).collect();
+	[a, b, c]
 }
 
 fn col(t: &str) -> Color32 {
@@ -213,7 +241,7 @@ impl eframe::App for App {
 		if dirty {
 			self.load();
 		}
-		let n = self.lists().map(|l| l.len());
+		let n = lists(&self.devs, &self.rules, self.hubs).map(|l| l.len());
 		egui::Panel::top("top").show(ui, |ui| {
 			ui.add_space(6.);
 			ui.horizontal(|ui| {
@@ -245,11 +273,16 @@ impl eframe::App for App {
 				if self.tab == 3 {
 					return self.rules_ui(ui);
 				}
-				let l = self.lists();
-				let a = self.cards(ui, &l[self.tab as usize]);
-				drop(l);
+				let a = self.cards(ui);
 				let r = match a {
 					Some(Act::Dev(i, t, p)) => ug::act(i, t, p),
+					Some(Act::Label(k, v)) => {
+						self.ren = None;
+						if k.is_empty() {
+							return;
+						}
+						info::label(&k, &v).map(|_| String::new())
+					}
 					Some(Act::Revoke(r, d)) => ug::run(&["remove-rule", &r.to_string()]).and_then(|s| d.map_or(Ok(s), |d| ug::act(d, "block", false))),
 					None => return,
 				};
